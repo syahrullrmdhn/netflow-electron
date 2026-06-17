@@ -62,11 +62,12 @@ function createWindow() {
   setInterval(checkForUpdates, 30 * 60 * 1000);
 }
 
-function startMonitor(targets) {
+function startMonitor(targets, intervalMs) {
   stopMonitor();
 
   const filters = buildFilter(targets);
   const isWindows = process.platform === 'win32';
+  const pollMs = intervalMs || 1000;
 
   if (isWindows) {
     // Windows: use PowerShell Get-NetTCPConnection + bandwidth tracking
@@ -129,7 +130,7 @@ function startMonitor(targets) {
             $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue;
             $procName = if ($proc) { $proc.ProcessName } else { "unknown" };
           } catch { $procName = "unknown" };
-          $bw = if ($destBytes[$c.RemoteAddress]) { [Math]::Round($destBytes[$c.RemoteAddress] / 1024, 1) } else { 0 };
+          $bw = if ($destBytes[$c.RemoteAddress]) { [Math]::Round($destBytes[$c.RemoteAddress] / 1048576, 2) } else { 0 };
           $result += [PSCustomObject]@{
             LocalAddress = $c.LocalAddress;
             LocalPort = $c.LocalPort;
@@ -141,8 +142,8 @@ function startMonitor(targets) {
             BytesPerSec = $bw;
           };
         }
-        Write-Host (ConvertTo-Json @{connections=$result;totalBwPerSec=[Math]::Round($totalBytes/$elapsedSec/1024,1)} -Compress);
-        Start-Sleep -Milliseconds 1000;
+        Write-Host (ConvertTo-Json @{connections=$result;totalBwPerSec=[Math]::Round($totalBytes/$elapsedSec/1048576,2)} -Compress);
+        Start-Sleep -Milliseconds ${pollMs};
       }
     `]);
   } else {
@@ -226,8 +227,8 @@ function parseNetstat(line) {
 }
 
 // IPC handlers
-ipcMain.handle('start-monitor', (_, targets) => {
-  startMonitor(targets);
+ipcMain.handle('start-monitor', (_, targets, interval) => {
+  startMonitor(targets, interval);
   return { status: 'started', targets };
 });
 

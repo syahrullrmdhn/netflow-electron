@@ -99,6 +99,19 @@
     }
     .controls input:focus { border-color: var(--accent); }
     .controls input::placeholder { color: var(--text-dim); }
+    .interval-select {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'Consolas', monospace;
+      outline: none;
+      cursor: pointer;
+      min-width: 60px;
+    }
+    .interval-select:focus { border-color: var(--accent); }
 
     .btn {
       padding: 8px 16px;
@@ -164,6 +177,18 @@
     .stat-value.destinations { color: var(--purple); }
     .stat-value.throughput { color: var(--green); }
     .stat-value.bandwidth { color: var(--yellow); }
+
+    .chart-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      height: 120px;
+    }
+    .chart-wrap canvas {
+      width: 100%;
+      height: 100%;
+    }
 
     .table-wrap {
       flex: 1;
@@ -283,6 +308,11 @@
 
     <div class="controls">
       <input type="text" id="targetInput" placeholder="192.168.1.0/24, 10.0.0.5, api.example.com" value="">
+      <select class="interval-select" id="intervalSelect">
+        <option value="1000">1s</option>
+        <option value="5000">5s</option>
+        <option value="30000">30s</option>
+      </select>
       <button class="btn btn-start" id="btnStart" onclick="toggleMonitor()">▶ Start</button>
       <button class="btn btn-clear" onclick="clearData()">Clear</button>
     </div>
@@ -301,9 +331,14 @@
         <div class="stat-value throughput" id="flowCount">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Bandwidth (KB/s)</div>
+        <div class="stat-label">Bandwidth (MB/s)</div>
         <div class="stat-value bandwidth" id="bwTotal">0</div>
       </div>
+    </div>
+
+    <!-- Bandwidth chart -->
+    <div class="chart-wrap" id="chartWrap">
+      <canvas id="bwChart"></canvas>
     </div>
 
     <div class="table-wrap">
@@ -334,13 +369,89 @@
 
   <script>
     let isMonitoring = false;
-    let connections = new Map(); // key: local:port-remote:port → connection
+    let connections = new Map();
     let totalFlows = 0;
     let cleanup;
+    let bwHistory = []; // for chart
+
+    // Init chart
+    const chartCanvas = document.getElementById('bwChart');
+    const chartCtx = chartCanvas.getContext('2d');
+
+    function drawChart() {
+      const cw = chartCanvas.width = chartCanvas.parentElement.clientWidth - 32;
+      const ch = chartCanvas.height = chartCanvas.parentElement.clientHeight - 24;
+      if (bwHistory.length < 2) return;
+
+      chartCtx.clearRect(0, 0, cw, ch);
+
+      const maxBw = Math.max(...bwHistory, 0.01);
+      const padding = { top: 8, right: 8, bottom: 20, left: 48 };
+      const w = cw - padding.left - padding.right;
+      const h = ch - padding.top - padding.bottom;
+      const stepX = w / Math.max(bwHistory.length - 1, 1);
+
+      // Grid lines
+      chartCtx.strokeStyle = 'rgba(255,255,255,0.05)';
+      chartCtx.lineWidth = 1;
+      for (let i = 0; i <= 4; i++) {
+        const y = padding.top + h * (i / 4);
+        chartCtx.beginPath();
+        chartCtx.moveTo(padding.left, y);
+        chartCtx.lineTo(cw - padding.right, y);
+        chartCtx.stroke();
+      }
+
+      // Labels
+      chartCtx.fillStyle = '#6c7086';
+      chartCtx.font = '10px Consolas, monospace';
+      chartCtx.textAlign = 'right';
+      for (let i = 0; i <= 4; i++) {
+        const val = (maxBw * (1 - i / 4)).toFixed(2);
+        chartCtx.fillText(val, padding.left - 6, padding.top + h * (i / 4) + 4);
+      }
+
+      // Time labels
+      chartCtx.textAlign = 'center';
+      const now = Date.now();
+      const labels = [now - (bwHistory.length - 1) * 1000, now];
+      for (let i = 0; i <= 1; i++) {
+        const t = new Date(labels[i]);
+        const label = t.getHours().toString().padStart(2, '0') + ':' + t.getMinutes().toString().padStart(2, '0') + ':' + t.getSeconds().toString().padStart(2, '0');
+        chartCtx.fillText(label, padding.left + w * i, ch - 4);
+      }
+
+      // Line
+      chartCtx.beginPath();
+      chartCtx.strokeStyle = 'rgba(249,226,175,0.9)';
+      chartCtx.lineWidth = 2;
+      chartCtx.shadowColor = 'rgba(249,226,175,0.3)';
+      chartCtx.shadowBlur = 6;
+
+      for (let i = 0; i < bwHistory.length; i++) {
+        const x = padding.left + i * stepX;
+        const y = padding.top + h * (1 - bwHistory[i] / maxBw);
+        if (i === 0) chartCtx.moveTo(x, y);
+        else chartCtx.lineTo(x, y);
+      }
+      chartCtx.stroke();
+      chartCtx.shadowBlur = 0;
+
+      // Fill
+      chartCtx.lineTo(padding.left + (bwHistory.length - 1) * stepX, padding.top + h);
+      chartCtx.lineTo(padding.left, padding.top + h);
+      chartCtx.closePath();
+      const grad = chartCtx.createLinearGradient(0, padding.top, 0, padding.top + h);
+      grad.addColorStop(0, 'rgba(249,226,175,0.15)');
+      grad.addColorStop(1, 'rgba(249,226,175,0.01)');
+      chartCtx.fillStyle = grad;
+      chartCtx.fill();
+    }
 
     function toggleMonitor() {
       const btn = document.getElementById('btnStart');
       const input = document.getElementById('targetInput');
+      const interval = parseInt(document.getElementById('intervalSelect').value);
 
       if (isMonitoring) {
         window.api.stopMonitor();
@@ -354,16 +465,24 @@
 
       const raw = input.value.trim();
       const targets = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
-      window.api.startMonitor(targets);
+      window.api.startMonitor(targets, interval);
       isMonitoring = true;
       btn.textContent = '■ Stop';
       btn.classList.add('active');
       setStatus(true);
+      bwHistory = []; // reset chart
 
       cleanup = window.api.onTrafficData((data) => {
         if (!data.connections) return;
         const now = Date.now();
         let newCount = 0;
+
+        // Track bandwidth for chart (max 120 points)
+        if (data.totalBwPerSec !== undefined) {
+          bwHistory.push(data.totalBwPerSec);
+          if (bwHistory.length > 120) bwHistory.shift();
+          drawChart();
+        }
 
         // Update total bandwidth
         if (data.totalBwPerSec) {
@@ -424,7 +543,7 @@
           <span class="cell">${c.RemotePort}</span>
           <span class="cell proto-${c.Protocol.toLowerCase()}">${c.Protocol}</span>
           <span class="cell">${escapeHtml(c.Process)}</span>
-          <span class="cell bw">${c.bw ? c.bw + ' KB' : '—'}</span>
+          <span class="cell bw">${c.bw ? c.bw + ' MB' : '—'}</span>
         </div>
       `).join('');
 

@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
-  startMonitor: (targets) => ipcRenderer.invoke('start-monitor', targets),
+  startMonitor: (targets, interval) => ipcRenderer.invoke('start-monitor', targets, interval),
   stopMonitor: () => ipcRenderer.invoke('stop-monitor'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),
   minimize: () => ipcRenderer.invoke('window-minimize'),
