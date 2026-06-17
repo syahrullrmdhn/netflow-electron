@@ -202,6 +202,51 @@
       color: var(--yellow);
     }
 
+    .dest-table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .dest-table-wrap::-webkit-scrollbar { width: 6px; }
+    .dest-table-wrap::-webkit-scrollbar-track { background: transparent; }
+    .dest-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .dest-table-title {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+    .dest-table {
+      display: grid;
+      grid-template-columns: 1fr 80px 100px;
+      gap: 8px 12px;
+      font-family: 'Consolas', 'Cascadia Code', monospace;
+      font-size: 13px;
+    }
+    .dest-header {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dest-cell {
+      padding: 4px 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .dest-cell.ip { color: var(--accent); font-weight: 500; }
+    .dest-cell.count { color: var(--purple); text-align: center; }
+    .dest-cell.bw { color: var(--yellow); font-weight: 500; text-align: right; }
+
     .chart-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -356,7 +401,7 @@
         <div class="stat-value throughput" id="flowCount">0</div>
       </div>
       <div class="stat-card bw-card">
-        <div class="stat-label">Bandwidth (Mb/s)</div>
+        <div class="stat-label">Bandwidth (MB)</div>
         <div class="bw-details">
           <div class="bw-item">
             <span class="bw-label">Last</span>
@@ -379,6 +424,16 @@
       <canvas id="bwChart"></canvas>
     </div>
 
+    <!-- Destination breakdown (Torch style) -->
+    <div class="dest-table-wrap">
+      <div class="dest-table-title">Traffic per Destination (Torch)</div>
+      <div class="dest-table" id="destTable">
+        <span class="dest-header">Destination IP</span>
+        <span class="dest-header">Conns</span>
+        <span class="dest-header">MB</span>
+      </div>
+    </div>
+
     <div class="table-wrap">
       <div class="table-header">
         <span>Source</span>
@@ -387,7 +442,7 @@
         <span>Port</span>
         <span>Proto</span>
         <span>Process</span>
-        <span>Mb/s</span>
+        <span>MB</span>
       </div>
       <div class="table-body" id="tableBody">
         <div class="empty-state">
@@ -516,8 +571,8 @@
         let newCount = 0;
 
         // Track bandwidth for chart (max 120 points)
-        if (data.totalBwPerSec !== undefined) {
-          bwHistory.push(data.totalBwPerSec);
+        if (data.totalBwMB !== undefined) {
+          bwHistory.push(data.totalBwMB);
           if (bwHistory.length > 120) bwHistory.shift();
 
           // Update last/avg/max
@@ -530,11 +585,12 @@
           drawChart();
         }
 
-        // Update total bandwidth
-        if (data.totalBwPerSec) {
-          document.getElementById('bwLast').textContent = data.totalBwPerSec.toFixed(2);
+        // Update destination table (Torch-style)
+        if (data.destinations) {
+          updateDestTable(data.destinations);
         }
 
+        // Update connections
         for (const conn of data.connections) {
           const key = `${conn.LocalAddress}:${conn.LocalPort}-${conn.RemoteAddress}:${conn.RemotePort}`;
           const isNew = !connections.has(key);
@@ -542,7 +598,7 @@
           connections.set(key, {
             ...conn,
             isNew,
-            bw: conn.BytesPerSec || 0,
+            mb: conn.MB || 0,
             firstSeen: connections.get(key)?.firstSeen || conn.Timestamp,
             lastSeen: conn.Timestamp,
           });
@@ -589,12 +645,37 @@
           <span class="cell">${c.RemotePort}</span>
           <span class="cell proto-${c.Protocol.toLowerCase()}">${c.Protocol}</span>
           <span class="cell">${escapeHtml(c.Process)}</span>
-          <span class="cell bw">${c.bw ? c.bw + ' Mb' : '—'}</span>
+          <span class="cell bw">${c.mb ? c.mb + ' MB' : '—'}</span>
         </div>
       `).join('');
 
       // Reset isNew flag after first render
       for (const c of connections.values()) c.isNew = false;
+    }
+
+    function updateDestTable(destinations) {
+      const table = document.getElementById('destTable');
+      if (!destinations || destinations.length === 0) {
+        table.innerHTML = `
+          <span class="dest-header">Destination IP</span>
+          <span class="dest-header">Conns</span>
+          <span class="dest-header">MB</span>
+        `;
+        return;
+      }
+
+      // Sort by MB descending
+      const sorted = destinations.sort((a, b) => b.MB - a.MB);
+      
+      table.innerHTML = `
+        <span class="dest-header">Destination IP</span>
+        <span class="dest-header">Conns</span>
+        <span class="dest-header">MB</span>
+      ` + sorted.map(d => `
+        <span class="dest-cell ip">${escapeHtml(d.RemoteAddress)}</span>
+        <span class="dest-cell count">${d.Connections}</span>
+        <span class="dest-cell bw">${d.MB.toFixed(2)}</span>
+      `).join('');
     }
 
     function updateStats() {

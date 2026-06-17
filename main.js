@@ -6,7 +6,7 @@ const https = require('https');
 
 let mainWindow;
 let monitorProcess = null;
-const CURRENT_VERSION = '1.0.1';
+const CURRENT_VERSION = '1.0.4';
 const REPO = 'syahrullrmdhn/netflow-electron';
 
 // Simple update check via GitHub API
@@ -73,10 +73,8 @@ function startMonitor(targets, intervalMs) {
     // Windows: use PowerShell Get-NetTCPConnection + bandwidth tracking
     monitorProcess = spawn('powershell', ['-NoProfile', '-Command', `
       $targets = @(${filters.map(f => `'${f}'`).join(',')});
-      $prevBytes = @{};
+      $prevAdapterBytes = @{};
       while ($true) {
-        $t0 = Get-Date;
-        
         $conns = Get-NetTCPConnection -State Established | Where-Object {
           $remote = $_.RemoteAddress;
           if ($targets -contains '*') { return $true };
@@ -92,57 +90,73 @@ function startMonitor(targets, intervalMs) {
         } | Select-Object LocalAddress,LocalPort,RemoteAddress,RemotePort,@{N='Protocol';E={'UDP'}},OwningProcess;
         $conns = @($conns) + @($udp);
 
-        # Get interface bandwidth
+        # Get per-adapter delta bytes (track each adapter separately)
+        $deltaTotal = 0;
         try {
-          $adapters = Get-NetAdapterStatistics -ErrorAction SilentlyContinue;
-          $totalBytes = 0;
-          foreach ($a in $adapters) { $totalBytes += $a.ReceivedBytes + $a.SentBytes };
-        } catch { $totalBytes = 0; }
+          $adapters = Get-NetAdapterStatistics -ErrorAction SilentlyContinue | Where-Object { $_.ReceivedBytes -gt 0 -or $_.SentBytes -gt 0 };
+          foreach ($a in $adapters) {
+            $current = $a.ReceivedBytes + $a.SentBytes;
+            $prev = if ($prevAdapterBytes[$a.Name]) { $prevAdapterBytes[$a.Name] } else { $current };
+            $delta = [Math]::Max(0, ($current - $prev));
+            $deltaTotal += $delta;
+            $prevAdapterBytes[$a.Name] = $current;
+          }
+        } catch { $deltaTotal = 0; }
 
-        # Calculate per-destination bytes
-        $destBytes = @{};
-        $destCount = @{};
+        # Convert to MB (actual transferred during interval)
+        $totalBwMB = [Math]::Round($deltaTotal / 1048576, 2);
+
+        # Group by destination and count connections + track per-destination bytes
+        $destStats = @{};
         foreach ($c in $conns) {
           $key = $c.RemoteAddress;
-          if (-not $destCount[$key]) { $destCount[$key] = 0; }
-          $destCount[$key] += 1;
+          if (-not $destStats[$key]) { 
+            $destStats[$key] = @{ Count = 0; Conns = @(); };
+          }
+          $destStats[$key].Count += 1;
+          $destStats[$key].Conns += $c;
         }
 
-        # Proportional allocation based on connection count
-        $totalConns = ($destCount.Values | Measure-Object -Sum).Sum;
+        # Proportional allocation per destination
+        $totalConns = $conns.Count;
+        $destMB = @{};
         if ($totalConns -gt 0) {
-          foreach ($key in $destCount.Keys) {
-            $ratio = $destCount[$key] / $totalConns;
-            $prev = if ($prevBytes[$key]) { $prevBytes[$key] } else { 0 };
-            $current = $ratio * $totalBytes;
-            $destBytes[$key] = [Math]::Max(0, ($current - $prev));
-            $prevBytes[$key] = $current;
+          foreach ($key in $destStats.Keys) {
+            $ratio = $destStats[$key].Count / $totalConns;
+            $destMB[$key] = [Math]::Round($ratio * $deltaTotal / 1048576, 2);
           }
         }
 
-        $now = Get-Date;
-        $elapsedSec = ($now - $t0).TotalSeconds;
-        if ($elapsedSec -eq 0) { $elapsedSec = 1; }
-
+        # Build result with per-destination aggregation
         $result = @();
-        foreach ($c in $conns) {
-          try {
-            $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue;
-            $procName = if ($proc) { $proc.ProcessName } else { "unknown" };
-          } catch { $procName = "unknown" };
-          $bw = if ($destBytes[$c.RemoteAddress]) { [Math]::Round($destBytes[$c.RemoteAddress] / 131072, 2) } else { 0 };
-          $result += [PSCustomObject]@{
-            LocalAddress = $c.LocalAddress;
-            LocalPort = $c.LocalPort;
-            RemoteAddress = $c.RemoteAddress;
-            RemotePort = $c.RemotePort;
-            Protocol = $c.Protocol;
-            Process = $procName;
-            Timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff");
-            BytesPerSec = $bw;
+        $destinations = @();
+        foreach ($key in $destStats.Keys) {
+          $mb = if ($destMB[$key]) { $destMB[$key] } else { 0 };
+          $destinations += [PSCustomObject]@{
+            RemoteAddress = $key;
+            Connections = $destStats[$key].Count;
+            MB = $mb;
           };
+          
+          # Add individual connections
+          foreach ($c in $destStats[$key].Conns) {
+            try {
+              $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue;
+              $procName = if ($proc) { $proc.ProcessName } else { "unknown" };
+            } catch { $procName = "unknown" };
+            $result += [PSCustomObject]@{
+              LocalAddress = $c.LocalAddress;
+              LocalPort = $c.LocalPort;
+              RemoteAddress = $c.RemoteAddress;
+              RemotePort = $c.RemotePort;
+              Protocol = $c.Protocol;
+              Process = $procName;
+              Timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ss.fff");
+              MB = $mb;
+            };
+          }
         }
-        Write-Host (ConvertTo-Json @{connections=$result;totalBwPerSec=[Math]::Round($totalBytes/$elapsedSec/131072,2)} -Compress);
+        Write-Host (ConvertTo-Json @{connections=$result;destinations=$destinations;totalBwMB=$totalBwMB} -Compress);
         Start-Sleep -Milliseconds ${pollMs};
       }
     `]);
