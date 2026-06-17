@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+  <title>NetFlow Monitor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #12121a;
+      --border: #1e1e2e;
+      --text: #cdd6f4;
+      --text-dim: #6c7086;
+      --accent: #89b4fa;
+      --green: #a6e3a1;
+      --yellow: #f9e2af;
+      --red: #f38ba8;
+      --purple: #cba6f7;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 36px;
+      padding: 0 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .titlebar-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .titlebar-actions {
+      display: flex;
+      gap: 2px;
+      -webkit-app-region: no-drag;
+    }
+    .titlebar-actions button {
+      width: 36px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      transition: all 0.15s;
+    }
+    .titlebar-actions button:hover { background: var(--border); color: var(--text); }
+    .titlebar-actions .close:hover { background: var(--red); color: #fff; }
+
+    .container {
+      height: calc(100vh - 36px);
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      gap: 12px;
+      -webkit-app-region: no-drag;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls input {
+      flex: 1;
+      min-width: 200px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Consolas', 'Cascadia Code', 'Fira Code', monospace;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .controls input:focus { border-color: var(--accent); }
+    .controls input::placeholder { color: var(--text-dim); }
+
+    .btn {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .btn-start {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+    .btn-start:hover { opacity: 0.9; }
+    .btn-start.active {
+      background: var(--red);
+      border-color: var(--red);
+    }
+    .btn-clear { background: transparent; color: var(--text-dim); }
+    .btn-clear:hover { background: var(--border); color: var(--text); }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+    }
+    .stat-card {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: 'Consolas', 'Cascadia Code', monospace;
+    }
+    .stat-value.connections { color: var(--accent); }
+    .stat-value.destinations { color: var(--purple); }
+    .stat-value.throughput { color: var(--green); }
+
+    .table-wrap {
+      flex: 1;
+      overflow: hidden;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+    }
+    .table-header {
+      display: grid;
+      grid-template-columns: 160px 60px 180px 60px 80px 120px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      background: rgba(255,255,255,0.02);
+    }
+    .table-body {
+      flex: 1;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+    }
+    .table-body::-webkit-scrollbar {
+      width: 6px;
+    }
+    .table-body::-webkit-scrollbar-track { background: transparent; }
+    .table-body::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 3px;
+    }
+    .table-row {
+      display: grid;
+      grid-template-columns: 160px 60px 180px 60px 80px 120px;
+      padding: 9px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      transition: background 0.1s;
+    }
+    .table-row:hover { background: rgba(255,255,255,0.03); }
+    .table-row.new { animation: flashIn 0.5s ease; }
+
+    @keyframes flashIn {
+      from { background: rgba(137,180,250,0.15); }
+      to { background: transparent; }
+    }
+
+    .cell {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .cell.proto-tcp { color: var(--green); }
+    .cell.proto-udp { color: var(--yellow); }
+    .cell.remote { color: var(--accent); font-weight: 500; }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-dim);
+      gap: 8px;
+    }
+    .empty-state svg { opacity: 0.3; }
+    .empty-state p { font-size: 13px; }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 16px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      border-radius: 0 0 8px 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+    .status-dot.live { background: var(--green); animation: pulse 2s infinite; }
+    .status-dot.idle { background: var(--text-dim); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+  </style>
+</head>
+<body>
+  <div class="titlebar">
+    <span class="titlebar-title">NetFlow Monitor</span>
+    <div class="titlebar-actions">
+      <button onclick="window.api.minimize()" title="Minimize">─</button>
+      <button onclick="window.api.maximize()" title="Maximize">□</button>
+      <button class="close" onclick="window.api.close()" title="Close">✕</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="controls">
+      <input type="text" id="targetInput" placeholder="192.168.1.0/24, 10.0.0.5, api.example.com" value="">
+      <button class="btn btn-start" id="btnStart" onclick="toggleMonitor()">▶ Start</button>
+      <button class="btn btn-clear" onclick="clearData()">Clear</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">Active Connections</div>
+        <div class="stat-value connections" id="connCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Unique Destinations</div>
+        <div class="stat-value destinations" id="destCount">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Flows</div>
+        <div class="stat-value throughput" id="flowCount">0</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-header">
+        <span>Source</span>
+        <span>Port</span>
+        <span>Destination</span>
+        <span>Port</span>
+        <span>Proto</span>
+        <span>Process</span>
+      </div>
+      <div class="table-body" id="tableBody">
+        <div class="empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+            <path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>
+          </svg>
+          <p>Enter a target IP, prefix, or domain and click Start</p>
+        </div>
+      </div>
+      <div class="status-bar">
+        <span><span class="status-dot idle" id="statusDot"></span><span id="statusText">Idle</span></span>
+        <span id="lastUpdate"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isMonitoring = false;
+    let connections = new Map(); // key: local:port-remote:port → connection
+    let totalFlows = 0;
+    let cleanup;
+
+    function toggleMonitor() {
+      const btn = document.getElementById('btnStart');
+      const input = document.getElementById('targetInput');
+
+      if (isMonitoring) {
+        window.api.stopMonitor();
+        isMonitoring = false;
+        btn.textContent = '▶ Start';
+        btn.classList.remove('active');
+        setStatus(false);
+        if (cleanup) cleanup();
+        return;
+      }
+
+      const raw = input.value.trim();
+      const targets = raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+      window.api.startMonitor(targets);
+      isMonitoring = true;
+      btn.textContent = '■ Stop';
+      btn.classList.add('active');
+      setStatus(true);
+
+      cleanup = window.api.onTrafficData((data) => {
+        if (!data.connections) return;
+        const now = Date.now();
+        let newCount = 0;
+
+        for (const conn of data.connections) {
+          const key = `${conn.LocalAddress}:${conn.LocalPort}-${conn.RemoteAddress}:${conn.RemotePort}`;
+          const isNew = !connections.has(key);
+
+          connections.set(key, {
+            ...conn,
+            isNew,
+            firstSeen: connections.get(key)?.firstSeen || conn.Timestamp,
+            lastSeen: conn.Timestamp,
+          });
+
+          if (isNew) {
+            newCount++;
+            totalFlows++;
+          }
+        }
+
+        // Remove stale connections (older than 5s)
+        for (const [key, conn] of connections) {
+          if (now - new Date(conn.lastSeen).getTime() > 5000) {
+            connections.delete(key);
+          }
+        }
+
+        updateTable();
+        updateStats();
+        document.getElementById('lastUpdate').textContent =
+          new Date().toLocaleTimeString();
+      });
+    }
+
+    function updateTable() {
+      const tbody = document.getElementById('tableBody');
+      if (connections.size === 0) {
+        tbody.innerHTML = `
+          <div class="empty-state">
+            <p>No active connections to monitored targets</p>
+          </div>`;
+        return;
+      }
+
+      const sorted = Array.from(connections.values())
+        .sort((a, b) => new Date(b.lastSeen) - new Date(a.lastSeen))
+        .slice(0, 200);
+
+      tbody.innerHTML = sorted.map(c => `
+        <div class="table-row${c.isNew ? ' new' : ''}">
+          <span class="cell">${escapeHtml(c.LocalAddress)}</span>
+          <span class="cell">${c.LocalPort}</span>
+          <span class="cell remote">${escapeHtml(c.RemoteAddress)}</span>
+          <span class="cell">${c.RemotePort}</span>
+          <span class="cell proto-${c.Protocol.toLowerCase()}">${c.Protocol}</span>
+          <span class="cell">${escapeHtml(c.Process)}</span>
+        </div>
+      `).join('');
+
+      // Reset isNew flag after first render
+      for (const c of connections.values()) c.isNew = false;
+    }
+
+    function updateStats() {
+      document.getElementById('connCount').textContent = connections.size;
+      const uniqueDests = new Set(
+        Array.from(connections.values()).map(c => c.RemoteAddress)
+      ).size;
+      document.getElementById('destCount').textContent = uniqueDests;
+      document.getElementById('flowCount').textContent = totalFlows;
+    }
+
+    function clearData() {
+      connections.clear();
+      totalFlows = 0;
+      updateTable();
+      updateStats();
+    }
+
+    function setStatus(live) {
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      dot.className = 'status-dot ' + (live ? 'live' : 'idle');
+      text.textContent = live ? 'Monitoring' : 'Idle';
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
