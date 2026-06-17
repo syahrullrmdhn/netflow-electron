@@ -2,14 +2,41 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const os = require('os');
-const { autoUpdater } = require('electron-updater');
+const https = require('https');
 
 let mainWindow;
 let monitorProcess = null;
+const CURRENT_VERSION = '1.0.1';
+const REPO = 'syahrullrmdhn/netflow-electron';
 
-// Configure auto-updater
-autoUpdater.autoDownload = true;
-autoUpdater.autoInstallOnAppQuit = true;
+// Simple update check via GitHub API
+function checkForUpdates() {
+  const opts = {
+    hostname: 'api.github.com',
+    path: `/repos/${REPO}/releases/latest`,
+    headers: { 'User-Agent': 'NetFlow-Monitor', 'Accept': 'application/vnd.github.v3+json' },
+  };
+
+  https.get(opts, (res) => {
+    let data = '';
+    res.on('data', (chunk) => data += chunk);
+    res.on('end', () => {
+      try {
+        const release = JSON.parse(data);
+        const latestVersion = release.tag_name?.replace('v', '');
+        if (latestVersion && latestVersion !== CURRENT_VERSION) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('update-status', {
+              status: 'available',
+              version: latestVersion,
+              url: release.html_url,
+            });
+          }
+        }
+      } catch (e) {}
+    });
+  }).on('error', () => {});
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -30,8 +57,9 @@ function createWindow() {
   mainWindow.loadFile('renderer/index.html');
   mainWindow.setTitle('NetFlow Monitor');
 
-  // Check for updates after window loads
-  autoUpdater.checkForUpdatesAndNotify();
+  // Check for updates after window loads (every 30 min)
+  checkForUpdates();
+  setInterval(checkForUpdates, 30 * 60 * 1000);
 }
 
 function startMonitor(targets) {
@@ -209,42 +237,8 @@ ipcMain.handle('stop-monitor', () => {
 });
 
 ipcMain.handle('check-update', () => {
-  return autoUpdater.checkForUpdatesAndNotify();
-});
-
-ipcMain.handle('quit-and-install', () => {
-  autoUpdater.quitAndInstall();
-});
-
-// Forward auto-updater events to renderer
-autoUpdater.on('update-available', (info) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-status', { status: 'available', version: info.version });
-  }
-});
-
-autoUpdater.on('update-not-available', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-status', { status: 'none' });
-  }
-});
-
-autoUpdater.on('download-progress', (progress) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-status', { status: 'downloading', percent: Math.floor(progress.percent) });
-  }
-});
-
-autoUpdater.on('update-downloaded', () => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-status', { status: 'downloaded' });
-  }
-});
-
-autoUpdater.on('error', (err) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('update-status', { status: 'error', message: err.message });
-  }
+  checkForUpdates();
+  return { status: 'checking' };
 });
 
 ipcMain.handle('window-minimize', () => mainWindow?.minimize());

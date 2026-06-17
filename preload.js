@@ -4,7 +4,6 @@ contextBridge.exposeInMainWorld('api', {
   startMonitor: (targets) => ipcRenderer.invoke('start-monitor', targets),
   stopMonitor: () => ipcRenderer.invoke('stop-monitor'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),
-  quitAndInstall: () => ipcRenderer.invoke('quit-and-install'),
   minimize: () => ipcRenderer.invoke('window-minimize'),
   maximize: () => ipcRenderer.invoke('window-maximize'),
   close: () => ipcRenderer.invoke('window-close'),

@@ -278,7 +278,7 @@
     <!-- Update notification -->
     <div class="update-banner hidden" id="updateBanner">
       <span id="updateText"></span>
-      <button class="btn btn-start btn-sm" id="updateBtn" onclick="window.api.quitAndInstall()" style="display:none">Restart</button>
+      <a id="updateLink" href="#" target="_blank" class="btn btn-start btn-sm" style="display:none">Download Update</a>
     </div>
 
     <div class="controls">
@@ -467,28 +467,24 @@
     window.api.onUpdateStatus((data) => {
       const banner = document.getElementById('updateBanner');
       const text = document.getElementById('updateText');
-      const btn = document.getElementById('updateBtn');
+      const link = document.getElementById('updateLink');
       banner.classList.remove('hidden');
 
       switch (data.status) {
         case 'available':
-          text.textContent = `New version v${data.version} available — downloading...`;
-          btn.style.display = 'none';
+          text.textContent = `v${data.version} available —`;
+          link.href = data.url;
+          link.style.display = 'inline-flex';
           break;
-        case 'downloading':
-          text.textContent = `Downloading update — ${data.percent}%`;
-          btn.style.display = 'none';
-          break;
-        case 'downloaded':
-          text.textContent = 'Update ready! Restart to apply.';
-          btn.style.display = 'inline-flex';
+        case 'checking':
+          banner.classList.add('hidden');
           break;
         case 'none':
           banner.classList.add('hidden');
           break;
         case 'error':
-          text.textContent = `Update failed: ${data.message}`;
-          btn.style.display = 'none';
+          text.textContent = `Update check failed: ${data.message}`;
+          link.style.display = 'none';
           setTimeout(() => banner.classList.add('hidden'), 5000);
           break;
       }
