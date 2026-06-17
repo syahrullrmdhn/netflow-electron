@@ -178,6 +178,30 @@
     .stat-value.throughput { color: var(--green); }
     .stat-value.bandwidth { color: var(--yellow); }
 
+    .bw-card .stat-label { margin-bottom: 8px; }
+    .bw-details {
+      display: flex;
+      gap: 12px;
+    }
+    .bw-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .bw-label {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .bw-value {
+      font-size: 18px;
+      font-weight: 700;
+      font-family: 'Consolas', 'Cascadia Code', monospace;
+      color: var(--yellow);
+    }
+
     .chart-wrap {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -331,9 +355,22 @@
         <div class="stat-label">Total Flows</div>
         <div class="stat-value throughput" id="flowCount">0</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card bw-card">
         <div class="stat-label">Bandwidth (Mb/s)</div>
-        <div class="stat-value bandwidth" id="bwTotal">0</div>
+        <div class="bw-details">
+          <div class="bw-item">
+            <span class="bw-label">Last</span>
+            <span class="bw-value" id="bwLast">—</span>
+          </div>
+          <div class="bw-item">
+            <span class="bw-label">Avg</span>
+            <span class="bw-value" id="bwAvg">—</span>
+          </div>
+          <div class="bw-item">
+            <span class="bw-label">Max</span>
+            <span class="bw-value" id="bwMax">—</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -482,12 +519,20 @@
         if (data.totalBwPerSec !== undefined) {
           bwHistory.push(data.totalBwPerSec);
           if (bwHistory.length > 120) bwHistory.shift();
+
+          // Update last/avg/max
+          const last = bwHistory[bwHistory.length - 1];
+          const avg = (bwHistory.reduce((a, b) => a + b, 0) / bwHistory.length).toFixed(2);
+          const max = Math.max(...bwHistory).toFixed(2);
+          document.getElementById('bwLast').textContent = last.toFixed(2);
+          document.getElementById('bwAvg').textContent = avg;
+          document.getElementById('bwMax').textContent = max;
           drawChart();
         }
 
         // Update total bandwidth
         if (data.totalBwPerSec) {
-          document.getElementById('bwTotal').textContent = data.totalBwPerSec;
+          document.getElementById('bwLast').textContent = data.totalBwPerSec.toFixed(2);
         }
 
         for (const conn of data.connections) {
@@ -564,9 +609,13 @@
     function clearData() {
       connections.clear();
       totalFlows = 0;
+      bwHistory = [];
       updateTable();
       updateStats();
-      document.getElementById('bwTotal').textContent = '0';
+      document.getElementById('bwLast').textContent = '—';
+      document.getElementById('bwAvg').textContent = '—';
+      document.getElementById('bwMax').textContent = '—';
+      drawChart();
     }
 
     function setStatus(live) {
