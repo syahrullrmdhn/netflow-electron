@@ -293,6 +293,7 @@
   <div class="titlebar">
     <span class="titlebar-title">NetFlow Monitor</span>
     <div class="titlebar-actions">
+      <button onclick="window.api.checkUpdate()" title="Check for updates" style="margin-right:4px">↻</button>
       <button onclick="window.api.minimize()" title="Minimize">─</button>
       <button onclick="window.api.maximize()" title="Maximize">□</button>
       <button class="close" onclick="window.api.close()" title="Close">✕</button>
@@ -331,7 +332,7 @@
         <div class="stat-value throughput" id="flowCount">0</div>
       </div>
       <div class="stat-card">
-        <div class="stat-label">Bandwidth (MB/s)</div>
+        <div class="stat-label">Bandwidth (Mb/s)</div>
         <div class="stat-value bandwidth" id="bwTotal">0</div>
       </div>
     </div>
@@ -349,7 +350,7 @@
         <span>Port</span>
         <span>Proto</span>
         <span>Process</span>
-        <span>BW/s</span>
+        <span>Mb/s</span>
       </div>
       <div class="table-body" id="tableBody">
         <div class="empty-state">
@@ -543,7 +544,7 @@
           <span class="cell">${c.RemotePort}</span>
           <span class="cell proto-${c.Protocol.toLowerCase()}">${c.Protocol}</span>
           <span class="cell">${escapeHtml(c.Process)}</span>
-          <span class="cell bw">${c.bw ? c.bw + ' MB' : '—'}</span>
+          <span class="cell bw">${c.bw ? c.bw + ' Mb' : '—'}</span>
         </div>
       `).join('');
 

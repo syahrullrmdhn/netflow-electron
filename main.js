@@ -130,7 +130,7 @@ function startMonitor(targets, intervalMs) {
             $proc = Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue;
             $procName = if ($proc) { $proc.ProcessName } else { "unknown" };
           } catch { $procName = "unknown" };
-          $bw = if ($destBytes[$c.RemoteAddress]) { [Math]::Round($destBytes[$c.RemoteAddress] / 1048576, 2) } else { 0 };
+          $bw = if ($destBytes[$c.RemoteAddress]) { [Math]::Round($destBytes[$c.RemoteAddress] / 131072, 2) } else { 0 };
           $result += [PSCustomObject]@{
             LocalAddress = $c.LocalAddress;
             LocalPort = $c.LocalPort;
@@ -142,7 +142,7 @@ function startMonitor(targets, intervalMs) {
             BytesPerSec = $bw;
           };
         }
-        Write-Host (ConvertTo-Json @{connections=$result;totalBwPerSec=[Math]::Round($totalBytes/$elapsedSec/1048576,2)} -Compress);
+        Write-Host (ConvertTo-Json @{connections=$result;totalBwPerSec=[Math]::Round($totalBytes/$elapsedSec/131072,2)} -Compress);
         Start-Sleep -Milliseconds ${pollMs};
       }
     `]);
