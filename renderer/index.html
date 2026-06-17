@@ -122,6 +122,20 @@
     }
     .btn-clear { background: transparent; color: var(--text-dim); }
     .btn-clear:hover { background: var(--border); color: var(--text); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    .update-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: rgba(137,180,250,0.12);
+      border: 1px solid rgba(137,180,250,0.3);
+      border-radius: 8px;
+      font-size: 13px;
+      color: var(--accent);
+    }
+    .update-banner.hidden { display: none; }
 
     .stats {
       display: flex;
@@ -142,13 +156,14 @@
       margin-bottom: 4px;
     }
     .stat-value {
-      font-size: 24px;
+      font-size: 22px;
       font-weight: 700;
       font-family: 'Consolas', 'Cascadia Code', monospace;
     }
     .stat-value.connections { color: var(--accent); }
     .stat-value.destinations { color: var(--purple); }
     .stat-value.throughput { color: var(--green); }
+    .stat-value.bandwidth { color: var(--yellow); }
 
     .table-wrap {
       flex: 1;
@@ -161,10 +176,10 @@
     }
     .table-header {
       display: grid;
-      grid-template-columns: 160px 60px 180px 60px 80px 120px;
+      grid-template-columns: 140px 60px 160px 60px 60px 100px 90px;
       padding: 10px 16px;
       border-bottom: 1px solid var(--border);
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 600;
       color: var(--text-dim);
       text-transform: uppercase;
@@ -187,7 +202,7 @@
     }
     .table-row {
       display: grid;
-      grid-template-columns: 160px 60px 180px 60px 80px 120px;
+      grid-template-columns: 140px 60px 160px 60px 60px 100px 90px;
       padding: 9px 16px;
       border-bottom: 1px solid rgba(255,255,255,0.03);
       transition: background 0.1s;
@@ -208,6 +223,7 @@
     .cell.proto-tcp { color: var(--green); }
     .cell.proto-udp { color: var(--yellow); }
     .cell.remote { color: var(--accent); font-weight: 500; }
+    .cell.bw { color: var(--yellow); font-weight: 500; text-align: right; padding-right: 8px; }
 
     .empty-state {
       display: flex;
@@ -259,6 +275,12 @@
   </div>
 
   <div class="container">
+    <!-- Update notification -->
+    <div class="update-banner hidden" id="updateBanner">
+      <span id="updateText"></span>
+      <button class="btn btn-start btn-sm" id="updateBtn" onclick="window.api.quitAndInstall()" style="display:none">Restart</button>
+    </div>
+
     <div class="controls">
       <input type="text" id="targetInput" placeholder="192.168.1.0/24, 10.0.0.5, api.example.com" value="">
       <button class="btn btn-start" id="btnStart" onclick="toggleMonitor()">▶ Start</button>
@@ -278,6 +300,10 @@
         <div class="stat-label">Total Flows</div>
         <div class="stat-value throughput" id="flowCount">0</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">Bandwidth (KB/s)</div>
+        <div class="stat-value bandwidth" id="bwTotal">0</div>
+      </div>
     </div>
 
     <div class="table-wrap">
@@ -288,6 +314,7 @@
         <span>Port</span>
         <span>Proto</span>
         <span>Process</span>
+        <span>BW/s</span>
       </div>
       <div class="table-body" id="tableBody">
         <div class="empty-state">
@@ -338,6 +365,11 @@
         const now = Date.now();
         let newCount = 0;
 
+        // Update total bandwidth
+        if (data.totalBwPerSec) {
+          document.getElementById('bwTotal').textContent = data.totalBwPerSec;
+        }
+
         for (const conn of data.connections) {
           const key = `${conn.LocalAddress}:${conn.LocalPort}-${conn.RemoteAddress}:${conn.RemotePort}`;
           const isNew = !connections.has(key);
@@ -345,6 +377,7 @@
           connections.set(key, {
             ...conn,
             isNew,
+            bw: conn.BytesPerSec || 0,
             firstSeen: connections.get(key)?.firstSeen || conn.Timestamp,
             lastSeen: conn.Timestamp,
           });
@@ -391,6 +424,7 @@
           <span class="cell">${c.RemotePort}</span>
           <span class="cell proto-${c.Protocol.toLowerCase()}">${c.Protocol}</span>
           <span class="cell">${escapeHtml(c.Process)}</span>
+          <span class="cell bw">${c.bw ? c.bw + ' KB' : '—'}</span>
         </div>
       `).join('');
 
@@ -412,6 +446,7 @@
       totalFlows = 0;
       updateTable();
       updateStats();
+      document.getElementById('bwTotal').textContent = '0';
     }
 
     function setStatus(live) {
@@ -427,6 +462,37 @@
       div.textContent = str;
       return div.innerHTML;
     }
+
+    // Auto-update listener
+    window.api.onUpdateStatus((data) => {
+      const banner = document.getElementById('updateBanner');
+      const text = document.getElementById('updateText');
+      const btn = document.getElementById('updateBtn');
+      banner.classList.remove('hidden');
+
+      switch (data.status) {
+        case 'available':
+          text.textContent = `New version v${data.version} available — downloading...`;
+          btn.style.display = 'none';
+          break;
+        case 'downloading':
+          text.textContent = `Downloading update — ${data.percent}%`;
+          btn.style.display = 'none';
+          break;
+        case 'downloaded':
+          text.textContent = 'Update ready! Restart to apply.';
+          btn.style.display = 'inline-flex';
+          break;
+        case 'none':
+          banner.classList.add('hidden');
+          break;
+        case 'error':
+          text.textContent = `Update failed: ${data.message}`;
+          btn.style.display = 'none';
+          setTimeout(() => banner.classList.add('hidden'), 5000);
+          break;
+      }
+    });
   </script>
 </body>
 </html>

@@ -16,8 +16,18 @@
     },
     "win": {
       "target": [
-        {"target": "nsis", "arch": ["x64"]},
-        {"target": "portable", "arch": ["x64"]}
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "icon": "assets/icon.ico"
     },
@@ -34,8 +44,20 @@
       "node_modules/**/*"
     ]
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/syahrullrmdhn/netflow-electron.git"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "syahrullrmdhn",
+    "repo": "netflow-electron"
+  },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }
